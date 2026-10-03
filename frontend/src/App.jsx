@@ -153,7 +153,7 @@ function App() {
 
         const response = await fetch(
 
-          "http://localhost:5000/api/vehicles"
+          "https://smartrent-qgo8.onrender.com/api/vehicles"
 
         );
 
@@ -260,7 +260,7 @@ function App() {
     const fetchTopRatedVehicles = async () => {
       setTopRatedLoading(true);
       try {
-        const response = await fetch("http://localhost:5000/api/vehicles/top-rated?limit=5");
+        const response = await fetch("https://smartrent-qgo8.onrender.com/api/vehicles/top-rated?limit=5");
         const data = await response.json().catch(() => ({}));
         if (!response.ok || data.success === false) {
           throw new Error(data.message || "Unable to load top-rated vehicles.");
@@ -290,7 +290,7 @@ function App() {
       setDashboardError("");
       try {
         const token = localStorage.getItem("smartrentToken");
-        const response = await fetch("http://localhost:5000/api/dashboard", {
+        const response = await fetch("https://smartrent-qgo8.onrender.com/api/dashboard", {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await response.json();
@@ -457,7 +457,7 @@ function App() {
     setAiResults(null);
 
     try {
-      const response = await fetch("http://localhost:5000/api/ai-search", {
+      const response = await fetch("https://smartrent-qgo8.onrender.com/api/ai-search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt }),
@@ -555,7 +555,7 @@ function App() {
 
     setBookingLoading(true);
     try {
-      const response = await fetch("http://localhost:5000/api/bookings", {
+      const response = await fetch("https://smartrent-qgo8.onrender.com/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -608,7 +608,7 @@ function App() {
         ? authForm
         : { email: authForm.email, password: authForm.password };
 
-      const response = await fetch(`http://localhost:5000/api/auth/${endpoint}`, {
+      const response = await fetch(`https://smartrent-qgo8.onrender.com/api/auth/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -652,7 +652,7 @@ function App() {
     if (openModal) setShowNotifications(true);
 
     try {
-      const response = await fetch(`http://localhost:5000/api/notifications/${userId}`, {
+      const response = await fetch(`https://smartrent-qgo8.onrender.com/api/notifications/${userId}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -685,7 +685,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `http://localhost:5000/api/notifications/${notificationId}/read`,
+        `https://smartrent-qgo8.onrender.com/api/notifications/${notificationId}/read`,
         {
           method: "PATCH",
           headers: {
@@ -741,7 +741,7 @@ function App() {
     setBookingsError("");
     setShowMyBookings(true);
     try {
-      const response = await fetch(`http://localhost:5000/api/bookings/user/${userId}`);
+      const response = await fetch(`https://smartrent-qgo8.onrender.com/api/bookings/user/${userId}`);
       const data = await response.json();
       if (!response.ok || data.success === false) {
         throw new Error(data.message || "Unable to fetch bookings.");
@@ -770,7 +770,7 @@ function App() {
     setRatingSavingId(bookingId);
     setRatingMessages((current) => ({ ...current, [bookingId]: { type: "info", text: "Submitting your rating..." } }));
     try {
-      const response = await fetch(`http://localhost:5000/api/vehicles/${vehicleId}/rating`, {
+      const response = await fetch(`https://smartrent-qgo8.onrender.com/api/vehicles/${vehicleId}/rating`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, bookingId, rating: numericRating }),
@@ -788,7 +788,7 @@ function App() {
           (vehicle._id || vehicle.id) === vehicleId ? { ...vehicle, rating: data.rating } : vehicle
         ));
       }
-      const topResponse = await fetch("http://localhost:5000/api/vehicles/top-rated?limit=5");
+      const topResponse = await fetch("https://smartrent-qgo8.onrender.com/api/vehicles/top-rated?limit=5");
       const topData = await topResponse.json().catch(() => ({}));
       if (topResponse.ok && topData.success !== false && Array.isArray(topData.vehicles)) {
         setTopRatedVehicles(topData.vehicles);
@@ -813,7 +813,7 @@ function App() {
     setPricingHistoryLoading(true);
 
     try {
-      const response = await fetch("http://localhost:5000/api/pricing-history", {
+      const response = await fetch("https://smartrent-qgo8.onrender.com/api/pricing-history", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -845,7 +845,7 @@ function App() {
     setAdminBookingsLoading(true);
     setAdminBookingsError("");
     try {
-      const response = await fetch("http://localhost:5000/api/bookings/admin/all", {
+      const response = await fetch("https://smartrent-qgo8.onrender.com/api/bookings/admin/all", {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json().catch(() => ({}));
@@ -880,7 +880,7 @@ function App() {
     setBookingStatusSavingId(bookingId);
     setBookingStatusMessage({ type: "", text: "" });
     try {
-      const response = await fetch(`http://localhost:5000/api/bookings/admin/${bookingId}/status`, {
+      const response = await fetch(`https://smartrent-qgo8.onrender.com/api/bookings/admin/${bookingId}/status`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -904,7 +904,7 @@ function App() {
       } : current);
       setBookingStatusMessage({ type: "success", text: data.message || "Booking status updated successfully." });
       // Refresh dashboard counts after the booking status changes.
-      const dashboardResponse = await fetch("http://localhost:5000/api/dashboard", {
+      const dashboardResponse = await fetch("https://smartrent-qgo8.onrender.com/api/dashboard", {
         headers: { Authorization: `Bearer ${token}` },
       });
       const dashboardData = await dashboardResponse.json().catch(() => ({}));
@@ -935,7 +935,7 @@ function App() {
     setBookingDeletingId(bookingId);
     setBookingStatusMessage({ type: "", text: "" });
     try {
-      const response = await fetch(`http://localhost:5000/api/bookings/admin/${bookingId}`, {
+      const response = await fetch(`https://smartrent-qgo8.onrender.com/api/bookings/admin/${bookingId}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -956,7 +956,7 @@ function App() {
       } : current);
       setBookingStatusMessage({ type: "success", text: data.message || "Booking deleted successfully." });
 
-      const dashboardResponse = await fetch("http://localhost:5000/api/dashboard", {
+      const dashboardResponse = await fetch("https://smartrent-qgo8.onrender.com/api/dashboard", {
         headers: { Authorization: `Bearer ${token}` },
       });
       const dashboardData = await dashboardResponse.json().catch(() => ({}));
@@ -999,7 +999,7 @@ function App() {
     setRateMessages((current) => ({ ...current, [vehicleId]: null }));
     try {
       const response = await fetch(
-        `http://localhost:5000/api/vehicles/${vehicleId}/rate`,
+        `https://smartrent-qgo8.onrender.com/api/vehicles/${vehicleId}/rate`,
         {
           method: "PATCH",
           headers: {
@@ -1062,7 +1062,7 @@ function App() {
     setFeedbackStatus({ type: "info", text: "Sending feedback..." });
 
     try {
-      const response = await fetch("http://localhost:5000/api/feedback", {
+      const response = await fetch("https://smartrent-qgo8.onrender.com/api/feedback", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1103,7 +1103,7 @@ function App() {
     setAdminFeedbackError("");
 
     try {
-      const response = await fetch("http://localhost:5000/api/feedback/admin/all", {
+      const response = await fetch("https://smartrent-qgo8.onrender.com/api/feedback/admin/all", {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json().catch(() => ({}));
@@ -1128,7 +1128,7 @@ function App() {
 
     setFeedbackUpdatingId(feedbackId);
     try {
-      const response = await fetch(`http://localhost:5000/api/feedback/admin/${feedbackId}/read`, {
+      const response = await fetch(`https://smartrent-qgo8.onrender.com/api/feedback/admin/${feedbackId}/read`, {
         method: "PATCH",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -1174,7 +1174,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `http://localhost:5000/api/feedback/admin/${feedbackId}/reply`,
+        `https://smartrent-qgo8.onrender.com/api/feedback/admin/${feedbackId}/reply`,
         {
           method: "PATCH",
           headers: {
