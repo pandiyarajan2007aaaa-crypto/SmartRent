@@ -1,5 +1,6 @@
 const express = require("express");
 const mongoose = require("mongoose");
+const jwt = require("jsonwebtoken");
 
 const router = express.Router();
 
@@ -96,7 +97,7 @@ router.patch("/admin/:bookingId/status", adminAuth, async (req, res) => {
     // ==========================================
     // LATE RETURN FINE
     // ==========================================
-    if (status === "Returned") {
+    if (status === "Returned" || status === "Completed") {
       const actualReturnDate = new Date();
       const dueDate = new Date(booking.returnDate);
 
@@ -132,7 +133,6 @@ router.patch("/admin/:bookingId/status", adminAuth, async (req, res) => {
     }
 
     booking.status = status;
-
     await booking.save();
 
     // ==========================================
@@ -151,7 +151,7 @@ router.patch("/admin/:bookingId/status", adminAuth, async (req, res) => {
     // ==========================================
     // RETURN NOTIFICATIONS
     // ==========================================
-    if (status === "Returned") {
+    if (status === "Returned" || status === "Completed") {
       await createNotificationSafely({
         user: booking.user,
         title: "Vehicle Return Confirmed",
@@ -265,13 +265,9 @@ router.delete("/admin/:bookingId", adminAuth, async (req, res) => {
 // ==========================================
 // DYNAMIC PRICING HELPER
 // ==========================================
-
 async function calculateDynamicPrice(vehicle) {
   const thirtyDaysAgo = new Date();
-
-  thirtyDaysAgo.setDate(
-    thirtyDaysAgo.getDate() - 30
-  );
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
   const bookingCounts = await Booking.aggregate([
     {
@@ -279,17 +275,14 @@ async function calculateDynamicPrice(vehicle) {
         createdAt: {
           $gte: thirtyDaysAgo,
         },
-
         status: {
           $ne: "Cancelled",
         },
       },
     },
-
     {
       $group: {
         _id: "$vehicle",
-
         count: {
           $sum: 1,
         },
@@ -297,9 +290,8 @@ async function calculateDynamicPrice(vehicle) {
     },
   ]);
 
-  const allVehicles = await Vehicle.find({}, "_id");
+  const allVehicles = await Vehicle.find({ isArchived: { $ne: true } }, "_id");
 
-  // If only one vehicle exists
   if (allVehicles.length <= 1) {
     return {
       basePrice: Number(vehicle.pricePerDay),
@@ -309,79 +301,32 @@ async function calculateDynamicPrice(vehicle) {
   }
 
   const countMap = new Map(
-    bookingCounts.map((item) => [
-      item._id.toString(),
-      item.count,
-    ])
+    bookingCounts.map((item) => [item._id.toString(), item.count])
   );
 
   const counts = allVehicles.map(
-    (item) =>
-      countMap.get(item._id.toString()) || 0
+    (item) => countMap.get(item._id.toString()) || 0
   );
 
-  const sortedCounts = [...counts].sort(
-    (a, b) => a - b
-  );
+  const sortedCounts = [...counts].sort((a, b) => a - b);
 
-  const lowIndex = Math.floor(
-    (sortedCounts.length - 1) * 0.25
-  );
-
-  const highIndex = Math.ceil(
-    (sortedCounts.length - 1) * 0.75
-  );
+  const lowIndex = Math.floor((sortedCounts.length - 1) * 0.25);
+  const highIndex = Math.ceil((sortedCounts.length - 1) * 0.75);
 
   const lowThreshold = sortedCounts[lowIndex];
-
   const highThreshold = sortedCounts[highIndex];
 
-  const currentCount =
-    countMap.get(vehicle._id.toString()) || 0;
-
-  // ==========================================
-  // TEMPORARY TEST LOG
-  // ==========================================
-
-  console.log("DYNAMIC PRICING TEST:", {
-    vehicle: vehicle.name,
-    currentCount,
-    lowThreshold,
-    highThreshold,
-    basePrice: vehicle.pricePerDay,
-  });
+  const currentCount = countMap.get(vehicle._id.toString()) || 0;
 
   const basePrice = Number(vehicle.pricePerDay);
-
   let finalPrice = basePrice;
-
   let pricingType = "Normal Price";
 
-  // ==========================================
-  // HIGH DEMAND +10%
-  // ==========================================
-
-  if (
-    currentCount > lowThreshold &&
-    currentCount >= highThreshold
-  ) {
-    finalPrice =
-      Math.round(basePrice * 1.1 * 100) / 100;
-
+  if (currentCount > lowThreshold && currentCount >= highThreshold) {
+    finalPrice = Math.round(basePrice * 1.1 * 100) / 100;
     pricingType = "High Demand (+10%)";
-  }
-
-  // ==========================================
-  // LOW DEMAND -10%
-  // ==========================================
-
-  else if (
-    currentCount < highThreshold &&
-    currentCount <= lowThreshold
-  ) {
-    finalPrice =
-      Math.round(basePrice * 0.9 * 100) / 100;
-
+  } else if (currentCount < highThreshold && currentCount <= lowThreshold) {
+    finalPrice = Math.round(basePrice * 0.9 * 100) / 100;
     pricingType = "Low Demand (-10%)";
   }
 
@@ -391,6 +336,7 @@ async function calculateDynamicPrice(vehicle) {
     pricingType,
   };
 }
+
 // ==========================================
 // CREATE NEW BOOKING
 // ==========================================
@@ -398,7 +344,7 @@ router.post("/", async (req, res) => {
   let bookedVehicle = null;
 
   try {
-    const {
+    let {
       userId,
       vehicleId,
       pickupDate,
@@ -406,9 +352,20 @@ router.post("/", async (req, res) => {
       location,
     } = req.body || {};
 
-    // ==========================================
-    // VALIDATE REQUIRED FIELDS
-    // ==========================================
+    // Check optional token authentication for userId verification
+    if (req.headers.authorization && req.headers.authorization.startsWith("Bearer ")) {
+      try {
+        const token = req.headers.authorization.split(" ")[1];
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        if (decoded?.userId) {
+          userId = decoded.userId;
+        }
+      } catch (err) {
+        // Continue with body userId if token verification fails
+      }
+    }
+
+    // Validate required fields
     if (
       !userId ||
       !vehicleId ||
@@ -422,9 +379,7 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // ==========================================
-    // VALIDATE OBJECT IDS
-    // ==========================================
+    // Validate ObjectIds
     if (
       !mongoose.isValidObjectId(userId) ||
       !mongoose.isValidObjectId(vehicleId)
@@ -435,11 +390,8 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // ==========================================
-    // CHECK USER
-    // ==========================================
+    // Check user
     const user = await User.findById(userId);
-
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -447,9 +399,7 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // ==========================================
-    // VALIDATE DATES
-    // ==========================================
+    // Validate dates
     const pickup = new Date(pickupDate);
     const returning = new Date(returnDate);
 
@@ -460,13 +410,11 @@ router.post("/", async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message: "Invalid booking dates.",
+        message: "Invalid booking dates. Return date must be after pickup date.",
       });
     }
 
-    // ==========================================
-    // VALIDATE LOCATION
-    // ==========================================
+    // Validate location
     if (!location.trim()) {
       return res.status(400).json({
         success: false,
@@ -474,63 +422,71 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // ==========================================
-    // LOCK VEHICLE
-    // ==========================================
-    bookedVehicle =
-      await Vehicle.findOneAndUpdate(
-        {
-          _id: vehicleId,
-          available: true,
+    // Check vehicle existence and non-archived state
+    const vehicleToCheck = await Vehicle.findOne({
+      _id: vehicleId,
+      isArchived: { $ne: true },
+    });
+
+    if (!vehicleToCheck) {
+      return res.status(404).json({
+        success: false,
+        message: "Vehicle not found or no longer active.",
+      });
+    }
+
+    // Check for overlapping active booking for this vehicle
+    const overlappingBooking = await Booking.findOne({
+      vehicle: vehicleId,
+      status: { $in: ["Pending", "Confirmed", "Rented"] },
+      pickupDate: { $lte: returning },
+      returnDate: { $gte: pickup },
+    });
+
+    if (overlappingBooking) {
+      return res.status(409).json({
+        success: false,
+        message: "Vehicle is already booked for the selected date range. Please choose different dates.",
+      });
+    }
+
+    // Lock vehicle
+    bookedVehicle = await Vehicle.findOneAndUpdate(
+      {
+        _id: vehicleId,
+        available: true,
+      },
+      {
+        $set: {
+          available: false,
         },
-        {
-          $set: {
-            available: false,
-          },
-        },
-        {
-          new: true,
-        }
-      );
+      },
+      {
+        new: true,
+      }
+    );
 
     if (!bookedVehicle) {
       return res.status(409).json({
         success: false,
-        message: "Vehicle is not available.",
+        message: "Vehicle is currently not available.",
       });
     }
 
-    // ==========================================
-    // CALCULATE TOTAL DAYS
-    // ==========================================
-    const totalDays = Math.ceil(
-      (returning - pickup) /
-        (1000 * 60 * 60 * 24)
+    // Calculate total days
+    const totalDays = Math.max(
+      1,
+      Math.ceil((returning - pickup) / (1000 * 60 * 60 * 24))
     );
 
-    // ==========================================
-    // CALCULATE DYNAMIC PRICE
-    // ==========================================
-    const pricing =
-      await calculateDynamicPrice(bookedVehicle);
+    // Dynamic pricing
+    const pricing = await calculateDynamicPrice(bookedVehicle);
 
-    // ==========================================
-    // SAVE PRICING HISTORY
-    // ==========================================
     if (pricing.pricingType !== "Normal Price") {
       let reason = "Normal Price";
-
-      if (
-        pricing.pricingType.includes(
-          "High Demand"
-        )
-      ) {
+      if (pricing.pricingType.includes("High Demand")) {
         reason = "High Demand";
-      } else if (
-        pricing.pricingType.includes(
-          "Low Demand"
-        )
-      ) {
+      } else if (pricing.pricingType.includes("Low Demand")) {
         reason = "Low Demand";
       }
 
@@ -542,15 +498,9 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // ==========================================
-    // TOTAL AMOUNT
-    // ==========================================
-    const totalAmount =
-      totalDays * pricing.finalPrice;
+    const totalAmount = totalDays * pricing.finalPrice;
 
-    // ==========================================
-    // CREATE BOOKING
-    // ==========================================
+    // Create Booking
     const booking = await Booking.create({
       user: userId,
       vehicle: vehicleId,
@@ -561,6 +511,17 @@ router.post("/", async (req, res) => {
       totalAmount: totalAmount,
       status: "Pending",
     });
+
+    // In-app Notification for Booking Creation
+    await createNotificationSafely({
+      user: userId,
+      title: "Booking Submitted",
+      message: `Your booking for ${bookedVehicle.brand} ${bookedVehicle.name} (${totalDays} day${totalDays > 1 ? "s" : ""}) has been submitted and is pending confirmation.`,
+      type: "Booking Confirmation",
+      relatedBooking: booking._id,
+    });
+
+    await booking.populate("vehicle");
 
     return res.status(201).json({
       success: true,
@@ -573,18 +534,12 @@ router.post("/", async (req, res) => {
       },
     });
   } catch (error) {
-    // ==========================================
-    // RESTORE VEHICLE IF BOOKING FAILS
-    // ==========================================
     if (bookedVehicle) {
-      await Vehicle.findByIdAndUpdate(
-        bookedVehicle._id,
-        {
-          $set: {
-            available: true,
-          },
-        }
-      );
+      await Vehicle.findByIdAndUpdate(bookedVehicle._id, {
+        $set: {
+          available: true,
+        },
+      });
     }
 
     console.error("Booking error:", error);
@@ -598,10 +553,12 @@ router.post("/", async (req, res) => {
 
 // ==========================================
 // GET BOOKINGS FOR USER
+// Supports all bookings (Active, Completed, Cancelled)
 // ==========================================
 router.get("/user/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
+    const { status } = req.query;
 
     if (!mongoose.isValidObjectId(userId)) {
       return res.status(400).json({
@@ -610,12 +567,28 @@ router.get("/user/:userId", async (req, res) => {
       });
     }
 
-    const bookings = await Booking.find({
-      user: userId,
-      status: {
-        $ne: "Cancelled",
-      },
-    })
+    // Optional auth protection: prevent cross-customer data viewing
+    if (req.headers.authorization && req.headers.authorization.startsWith("Bearer ")) {
+      try {
+        const token = req.headers.authorization.split(" ")[1];
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        if (decoded.role !== "admin" && decoded.userId !== userId) {
+          return res.status(403).json({
+            success: false,
+            message: "You can only view your own bookings.",
+          });
+        }
+      } catch (authErr) {
+        // Continue if verification error
+      }
+    }
+
+    const filter = { user: userId };
+    if (status && status !== "All") {
+      filter.status = status;
+    }
+
+    const bookings = await Booking.find(filter)
       .populate("vehicle")
       .sort({
         createdAt: -1,
@@ -627,10 +600,7 @@ router.get("/user/:userId", async (req, res) => {
       bookings,
     });
   } catch (error) {
-    console.error(
-      "Fetch bookings error:",
-      error
-    );
+    console.error("Fetch bookings error:", error);
 
     return res.status(500).json({
       success: false,
@@ -642,126 +612,94 @@ router.get("/user/:userId", async (req, res) => {
 // ==========================================
 // CANCEL BOOKING WITHIN 1 HOUR
 // ==========================================
-router.post(
-  "/:bookingId/cancel",
-  async (req, res) => {
-    try {
-      const { bookingId } = req.params;
-      const { userId } = req.body || {};
+router.post("/:bookingId/cancel", async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    let { userId } = req.body || {};
 
-      // ==========================================
-      // VALIDATE IDS
-      // ==========================================
-      if (
-        !mongoose.isValidObjectId(bookingId) ||
-        !mongoose.isValidObjectId(userId)
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid booking ID or user ID.",
-        });
-      }
-
-      // ==========================================
-      // FIND BOOKING
-      // ==========================================
-      const booking =
-        await Booking.findById(bookingId);
-
-      if (!booking) {
-        return res.status(404).json({
-          success: false,
-          message: "Booking not found.",
-        });
-      }
-
-      // ==========================================
-      // CHECK OWNER
-      // ==========================================
-      if (
-        booking.user.toString() !== userId
-      ) {
-        return res.status(403).json({
-          success: false,
-          message:
-            "You cannot cancel this booking.",
-        });
-      }
-
-      // ==========================================
-      // CHECK STATUS
-      // ==========================================
-      if (
-        !["Pending", "Confirmed"].includes(
-          booking.status
-        )
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "This booking cannot be cancelled.",
-        });
-      }
-
-      // ==========================================
-      // ONE HOUR CANCELLATION LIMIT
-      // ==========================================
-      const oneHour =
-        60 * 60 * 1000;
-
-      const elapsedTime =
-        Date.now() -
-        booking.createdAt.getTime();
-
-      if (elapsedTime > oneHour) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Cancellation time has expired. You can cancel only within 1 hour.",
-        });
-      }
-
-      // ==========================================
-      // CANCEL BOOKING
-      // ==========================================
-      booking.status = "Cancelled";
-
-      await booking.save();
-
-      // ==========================================
-      // MAKE VEHICLE AVAILABLE
-      // ==========================================
-      await Vehicle.findByIdAndUpdate(
-        booking.vehicle,
-        {
-          $set: {
-            available: true,
-          },
+    // Auth check
+    if (req.headers.authorization && req.headers.authorization.startsWith("Bearer ")) {
+      try {
+        const token = req.headers.authorization.split(" ")[1];
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        if (decoded?.userId) {
+          userId = decoded.userId;
         }
-      );
+      } catch (err) {}
+    }
 
-      return res.json({
-        success: true,
-        message:
-          "Booking cancelled successfully.",
-      });
-    } catch (error) {
-      console.error(
-        "Cancel booking error:",
-        error
-      );
-
-      return res.status(500).json({
+    if (
+      !mongoose.isValidObjectId(bookingId) ||
+      !mongoose.isValidObjectId(userId)
+    ) {
+      return res.status(400).json({
         success: false,
-        message:
-          "Unable to cancel booking.",
+        message: "Invalid booking ID or user ID.",
       });
     }
-  }
-);
 
-// ==========================================
-// EXPORT ROUTER
-// ==========================================
+    const booking = await Booking.findById(bookingId).populate("vehicle");
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found.",
+      });
+    }
+
+    if (booking.user.toString() !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: "You cannot cancel this booking.",
+      });
+    }
+
+    if (!["Pending", "Confirmed"].includes(booking.status)) {
+      return res.status(400).json({
+        success: false,
+        message: "This booking cannot be cancelled because it is already active or closed.",
+      });
+    }
+
+    const oneHour = 60 * 60 * 1000;
+    const elapsedTime = Date.now() - booking.createdAt.getTime();
+
+    if (elapsedTime > oneHour) {
+      return res.status(400).json({
+        success: false,
+        message: "Cancellation window expired. You can cancel only within 1 hour of booking.",
+      });
+    }
+
+    booking.status = "Cancelled";
+    await booking.save();
+
+    await Vehicle.findByIdAndUpdate(booking.vehicle?._id || booking.vehicle, {
+      $set: {
+        available: true,
+      },
+    });
+
+    await createNotificationSafely({
+      user: userId,
+      title: "Booking Cancelled",
+      message: `Your booking for ${booking.vehicle?.brand || ""} ${booking.vehicle?.name || "vehicle"} has been cancelled.`,
+      type: "Booking Confirmation",
+      relatedBooking: booking._id,
+    });
+
+    return res.json({
+      success: true,
+      message: "Booking cancelled successfully.",
+    });
+  } catch (error) {
+    console.error("Cancel booking error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to cancel booking.",
+    });
+  }
+});
+
 module.exports = router;

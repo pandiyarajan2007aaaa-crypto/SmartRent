@@ -53,6 +53,33 @@ const vehicleSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    mileage: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    engineCapacity: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    luggageCapacity: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    modelYear: {
+      type: Number,
+      default: null,
+    },
+    featured: {
+      type: Boolean,
+      default: false,
+    },
+    isArchived: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,

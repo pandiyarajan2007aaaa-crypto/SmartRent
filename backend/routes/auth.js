@@ -12,12 +12,14 @@ router.post("/register", async (req, res) => {
 
     if (!name || !email || !password) {
       return res.status(400).json({
+        success: false,
         message: "Name, email and password are required",
       });
     }
 
     if (password.length < 8) {
       return res.status(400).json({
+        success: false,
         message: "Password must be at least 8 characters",
       });
     }
@@ -28,6 +30,7 @@ router.post("/register", async (req, res) => {
 
     if (existingUser) {
       return res.status(409).json({
+        success: false,
         message: "Email already registered",
       });
     }
@@ -43,6 +46,7 @@ router.post("/register", async (req, res) => {
     await user.save();
 
     res.status(201).json({
+      success: true,
       message: "Registration successful",
       user: {
         id: user._id,
@@ -54,70 +58,77 @@ router.post("/register", async (req, res) => {
   } catch (error) {
     console.error("Registration error:", error);
     res.status(500).json({
+      success: false,
       message: "Registration failed",
     });
   }
 });
+
 // User Login
 router.post("/login", async (req, res) => {
-    try {
-        const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
 
-        if (!email || !password) {
-            return res.status(400).json({
-                message: "Email and password are required"
-            });
-        }
-
-        const user = await User.findOne({
-            email: email.toLowerCase().trim()
-        });
-
-        if (!user) {
-            return res.status(401).json({
-                message: "Invalid email or password"
-            });
-        }
-
-        const isMatch = await bcrypt.compare(
-            password,
-            user.password
-        );
-
-        if (!isMatch) {
-            return res.status(401).json({
-                message: "Invalid email or password"
-            });
-        }
-
-        const token = jwt.sign(
-            {
-                userId: user._id,
-                role: user.role
-            },
-            process.env.JWT_SECRET,
-            { expiresIn: "1d" }
-        );
-
-        res.status(200).json({
-            success: true,
-            message: "Login successful",
-            token,
-            user: {
-                id: user._id,
-                name: user.name,
-                email: user.email,
-                role: user.role
-            }
-        });
-
-    } catch (error) {
-        console.error("Login error:", error);
-
-        res.status(500).json({
-            message: "Login failed"
-        });
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and password are required",
+      });
     }
+
+    const user = await User.findOne({
+      email: email.toLowerCase().trim(),
+    });
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password",
+      });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password",
+      });
+    }
+
+    const secret = process.env.JWT_SECRET || "smartrent_jwt_default_secret_key_2026";
+
+    const token = jwt.sign(
+      {
+        userId: user._id,
+        id: user._id,
+        role: user.role,
+        email: user.email,
+        name: user.name,
+      },
+      secret,
+      { expiresIn: "7d" }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Login successful",
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Login failed",
+    });
+  }
 });
 
 module.exports = router;

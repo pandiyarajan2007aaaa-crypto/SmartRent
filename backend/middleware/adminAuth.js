@@ -12,11 +12,9 @@ const adminAuth = (req, res, next) => {
     }
 
     const token = authHeader.split(" ")[1];
+    const secret = process.env.JWT_SECRET || "smartrent_jwt_default_secret_key_2026";
 
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET
-    );
+    const decoded = jwt.verify(token, secret);
 
     if (decoded.role !== "admin") {
       return res.status(403).json({
